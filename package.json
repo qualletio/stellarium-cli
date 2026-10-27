@@ -1,0 +1,49 @@
+{
+  "name": "stellarium-cli",
+  "version": "0.1.0",
+  "description": "Command-line tool for running RequestScript queries on Stellarium nodes.",
+  "homepage": "https://github.com/qualletio/stellarium-cli#readme",
+  "bugs": {
+    "url": "https://github.com/qualletio/stellarium-cli/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qualletio/stellarium-cli.git"
+  },
+  "type": "module",
+  "bin": {
+    "stellarium": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && chmod +x dist/index.js",
+    "prepack": "pnpm build",
+    "dev": "node src/index.ts",
+    "test": "pnpm build && vitest run --exclude 'dist/**'",
+    "lint": "biome lint src",
+    "check-types": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "stellarium",
+    "requestscript",
+    "cli"
+  ],
+  "author": "Christopher Poulsen <christopher.poulsen@quallet.io>",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@12.11.2",
+  "dependencies": {
+    "commander": "^15.0.0",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@types/node": "^26.6.4",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}
