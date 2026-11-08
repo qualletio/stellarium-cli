@@ -45,6 +45,43 @@ export interface RunResult {
     usage?: { tokens?: number };
 }
 
+export type DeployKind = 'contract' | 'event' | 'struct';
+
+export interface DeployedField {
+    name: string;
+    type: string;
+}
+
+export interface DeployedContract {
+    path: string;
+    name: string;
+    version: string;
+    source: string;
+}
+
+export interface DeployedEventType {
+    path: string;
+    name: string;
+    version: string;
+    fields: DeployedField[];
+    restricted: boolean;
+}
+
+export interface DeployedStruct {
+    path: string;
+    name: string;
+    version: string;
+    fields: DeployedField[];
+}
+
+export interface DeployResult {
+    /** False when the node already had this version with the same content. */
+    created: boolean;
+    feeMicroUsd?: number;
+}
+
+const DEPLOY_ROUTES: Record<DeployKind, string> = { contract: '/v1/contracts', event: '/v1/events', struct: '/v1/structs' };
+
 const PAGE_LIMIT = 500;
 
 export class NodeClient {
@@ -100,6 +137,58 @@ export class NodeClient {
                 });
         }
         return this.expectOk(response, 'POST /v1/run') as RunResult;
+    }
+
+    listContracts(): Promise<DeployedContract[]> {
+        return this.listAll('/v1/contracts', 'contracts');
+    }
+
+    listEventTypes(): Promise<DeployedEventType[]> {
+        return this.listAll('/v1/events', 'eventTypes');
+    }
+
+    listStructs(): Promise<DeployedStruct[]> {
+        return this.listAll('/v1/structs', 'structs');
+    }
+
+    /** Deploys a contract, event type or struct. The node pays itself any deploy fee out of the client's run. */
+    async deploy(kind: DeployKind, source: string): Promise<DeployResult> {
+        const route = DEPLOY_ROUTES[kind];
+        const response = await this.authorized((token) => send(`${this.nodeUrl}${route}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ source }),
+        }, this.http));
+
+        const message = errorMessage(response);
+        switch (response.status) {
+            case 400:
+            case 413:
+                throw new CliError('invalid_script', message ?? `The node rejected this ${kind}`, { status: response.status });
+            case 402:
+            case 422:
+                throw new CliError('payment_required', `The operator refused the deploy fee: ${message ?? 'payment required'}`, {
+                    status: response.status,
+                    hint: "Top up your organization's balance or raise its monthly cap on platform.stellarium.sh.",
+                });
+            case 409:
+                throw new CliError('conflict', message ?? `The node refused this ${kind} as a conflict`, { status: 409 });
+        }
+        const body = this.expectOk(response, `POST ${route}`) as { feeMicroUsd?: number };
+        return { created: response.status === 201, ...(body.feeMicroUsd !== undefined && { feeMicroUsd: body.feeMicroUsd }) };
+    }
+
+    private async listAll<T>(route: string, key: string): Promise<T[]> {
+        const items: T[] = [];
+        let offset: number | null = 0;
+        while (offset !== null) {
+            const response = await this.get(`${route}?offset=${offset}&limit=${PAGE_LIMIT}`);
+            const page = this.expectOk(response, `GET ${route}`) as Record<string, unknown> & { nextOffset?: number | null };
+            const pageItems = (page[key] ?? []) as T[];
+            items.push(...pageItems);
+            offset = pageItems.length === 0 ? null : (page.nextOffset ?? null);
+        }
+        return items;
     }
 
     private get(path: string): Promise<HttpResponse> {

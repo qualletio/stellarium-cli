@@ -21,6 +21,7 @@ export type ErrorCode =
     | 'unauthorized_client'
     | 'invalid_script'
     | 'script_failed'
+    | 'conflict'
     | 'payment_required'
     | 'forbidden'
     | 'rate_limited'
@@ -39,6 +40,7 @@ const exitCodes: Record<ErrorCode, ExitCode> = {
     forbidden: ExitCode.auth,
     invalid_script: ExitCode.script,
     script_failed: ExitCode.script,
+    conflict: ExitCode.script,
     payment_required: ExitCode.payment,
     rate_limited: ExitCode.network,
     network: ExitCode.network,
