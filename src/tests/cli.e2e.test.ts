@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -15,6 +15,18 @@ let server: Server;
 let origin: string;
 let dir: string;
 let tokensIssued = 0;
+const deployed = { contracts: [] as Record<string, unknown>[], events: [] as Record<string, unknown>[], structs: [] as Record<string, unknown>[] };
+const deployCalls: string[] = [];
+
+/** The stub's stand-in for the node's parser: `contract a.B@1...` to its path, name and fields. */
+function declared(source: string) {
+    const [, path, name, version, fields] = /(?:contract|event|struct) ([\w.]+)\.(\w+)(?:@([\d.]+))?(?:\(([^)]*)\))?/.exec(source) as RegExpExecArray;
+    const parsed = (fields ?? '').split(',').filter(Boolean).map((field) => {
+        const [fieldName, type] = field.split(':').map((part) => part.trim());
+        return { name: fieldName, type };
+    });
+    return { path, name, version: version ?? '1', fields: parsed };
+}
 
 /** A node and an operator in one server: the operator under /operator/v1, the node under /v1. */
 function startServer(): Promise<void> {
@@ -48,6 +60,20 @@ function startServer(): Promise<void> {
                 if (source.includes('boom')) return send(422, { error: 'Script failed', details: 'Division by zero', usage: { tokens: 4 } });
                 if (!source.startsWith('request')) return send(400, { error: 'Invalid script' });
                 return send(200, { returnValue: { value: 12, error: null }, usage: { tokens: 17 } });
+            }
+            const collection = /^\/v1\/(contracts|events|structs)$/.exec(url.pathname)?.[1] as keyof typeof deployed | undefined;
+            if (collection && request.method === 'GET') {
+                const key = collection === 'events' ? 'eventTypes' : collection;
+                return send(200, { [key]: deployed[collection].map((item) => ({ restricted: false, ...item })), nextOffset: null });
+            }
+            if (collection && request.method === 'POST') {
+                if (!request.headers.authorization?.startsWith('Bearer tok_')) return send(401, { error: 'Unauthorized' });
+                const { source } = JSON.parse(body) as { source: string };
+                if (source.includes('badtoken')) return send(400, { error: 'Invalid contract: unexpected token' });
+                const item = { ...declared(source), source };
+                deployCalls.push(`${item.path}.${item.name}@${item.version}`);
+                deployed[collection].push(item);
+                return send(201, { ...item, ...(collection === 'contracts' && { feeMicroUsd: 1000 }) });
             }
             send(404, { error: 'Not found' });
         });
@@ -161,6 +187,76 @@ describe('stellarium', () => {
         const run = await stellarium(['config', 'list']);
         expect(run.stdout).not.toContain('"secret"');
         expect(json(run).data.profiles[0]).toMatchObject({ name: 'default', active: true });
+    });
+
+    describe('deploy', () => {
+        const project = () => join(dir, 'project');
+
+        beforeAll(async () => {
+            await mkdir(join(project(), 'nested'), { recursive: true });
+            await mkdir(join(project(), 'node_modules'), { recursive: true });
+            await writeFile(join(project(), 'Outlook.req'), 'contract com.example.Outlook(city: string): string { return city }');
+            await writeFile(join(project(), 'Placed.req'), 'event com.example.Placed(to: com.example.Address@1)');
+            await writeFile(join(project(), 'nested', 'Address.req'), 'struct com.example.Address@1(zip: int32)');
+            await writeFile(join(project(), 'Today.req'), 'request Today { return 1 }');
+            await writeFile(join(project(), 'node_modules', 'Ignored.req'), 'contract ignored.Ignored: string { return "" }');
+        });
+
+        it('reports what would deploy without credentials or changes', async () => {
+            const run = await stellarium(['deploy', '--dry-run', project()], { STELLARIUM_CONFIG_DIR: join(dir, 'empty'), STELLARIUM_NODE_URL: origin });
+            expect(run.code).toBe(0);
+            const items = json(run).data.items;
+            expect(items.map((item: { ref: string, status: string }) => `${item.status} ${item.ref}`)).toEqual([
+                'would_deploy com.example.Address@1',
+                'would_deploy com.example.Placed@1',
+                'would_deploy com.example.Outlook@1',
+                'skipped Today',
+            ]);
+            expect(deployCalls).toEqual([]);
+        });
+
+        it('deploys structs, then events, then contracts', async () => {
+            const run = await stellarium(['deploy', project()]);
+            expect(run.code).toBe(0);
+            expect(deployCalls).toEqual(['com.example.Address@1', 'com.example.Placed@1', 'com.example.Outlook@1']);
+            expect(json(run).data.feeMicroUsd).toBe(1000);
+        });
+
+        it('leaves unchanged versions alone when deployed again', async () => {
+            const before = deployCalls.length;
+            const run = await stellarium(['--output', 'agent', 'deploy', project()]);
+            expect(run.code).toBe(0);
+            expect(deployCalls).toHaveLength(before);
+            expect(run.stdout).toContain('unchanged contract com.example.Outlook@1');
+        });
+
+        it('refuses a changed version with exit code 4 before deploying anything', async () => {
+            await writeFile(join(project(), 'Outlook.req'), 'contract com.example.Outlook(city: string): string { return "changed" }');
+            await writeFile(join(project(), 'New.req'), 'contract com.example.New: string { return "" }');
+            const before = deployCalls.length;
+            const run = await stellarium(['deploy', project()]);
+            expect(run.code).toBe(4);
+            expect(json(run).error).toMatchObject({ code: 'conflict', message: expect.stringContaining('com.example.Outlook@1') });
+            expect(deployCalls).toHaveLength(before);
+        });
+
+        it('names the file the node rejected and what already deployed', async () => {
+            await writeFile(join(project(), 'Outlook.req'), 'contract com.example.Outlook@2(city: string): string { return city }');
+            await writeFile(join(project(), 'New.req'), 'contract com.example.New: string { badtoken }');
+            const run = await stellarium(['deploy', project()]);
+            expect(run.code).toBe(4);
+            expect(json(run).error).toMatchObject({
+                code: 'invalid_script',
+                message: expect.stringContaining('New.req'),
+                details: { failed: 'com.example.New@1' },
+            });
+        });
+
+        it('refuses to deploy a request named directly', async () => {
+            const run = await stellarium(['deploy', join(project(), 'Today.req')]);
+            expect(run.code).toBe(2);
+            expect(json(run).error.hint).toContain('stellarium run');
+        });
     });
 
     it('rejects an unknown command as a usage error', async () => {

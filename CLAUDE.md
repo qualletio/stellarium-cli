@@ -19,6 +19,7 @@ pnpm check-types
 
 - `src/index.ts`: commander program, global flags, and the `runner` that wraps every action: it builds the `Context` and `Output`, starts the update check, prints the `CommandResult` or the error, and sets the exit code. Commands never print or exit themselves.
 - Commands (`src/commands/`) return `CommandResult { data, render(style, { agent, width }), raw? }`. `data` is the JSON payload; `render` produces pretty or agent text. Agent mode gets `plainStyle`.
+- `src/commands/deploy.ts`: reads `.req` files, orders them (structs, events, contracts), and compares them with the node's public lists first, because the node answers 409 for a contract or event version that already exists even when identical. `src/declaration.ts` scans only the declaration header; the node's parser stays the authority on validity.
 - `src/errors.ts`: `CliError` with a stable `code`, optional `hint`, `status` and `details`. Each code maps to an exit code (documented in the README, so changing them is a breaking change). Anything else becomes `unexpected`.
 - `src/config.ts`: profiles in `config.json` (0600). Flags > `STELLARIUM_*` env > profile. `resolveNodeUrl` for public routes, `resolveConfig` when credentials are needed.
 - `src/auth.ts`: `TokenProvider` gets run tokens from `{operatorUrl}/oauth/token` (client_credentials) and caches them in `tokens.json`, keyed by operator and client id, until a minute before expiry.

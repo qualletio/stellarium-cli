@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command, CommanderError, Option } from 'commander';
 import { registerConfig } from './commands/config.js';
+import { registerDeploy } from './commands/deploy.js';
 import { registerResources } from './commands/resources.js';
 import { registerRun } from './commands/run.js';
 import type { Runner } from './commands/types.js';
@@ -53,7 +54,7 @@ const runner: Runner = (action) => async (...args) => {
 
 program
     .name('stellarium')
-    .description('Run RequestScript queries on a Stellarium node and discover its resources.')
+    .description('Run RequestScript queries on a Stellarium node, deploy contracts, and discover its resources.')
     .version(version, '-v, --version')
     .option('-p, --profile <name>', 'config profile to use (default: the active profile)')
     .option('-n, --node <url>', 'node URL, overriding the profile')
@@ -72,10 +73,11 @@ Output modes:
   agent   compact plain text for LLM agents, with resource signatures and hints
 
 Exit codes:
-  0 ok, 1 unexpected, 2 usage or config, 3 auth, 4 script invalid or failed,
+  0 ok, 1 unexpected, 2 usage or config, 3 auth, 4 script invalid, failed or in conflict,
   5 network or server, 6 payment required`);
 
 registerRun(program, runner);
+registerDeploy(program, runner);
 registerResources(program, runner);
 registerConfig(program, runner);
 
