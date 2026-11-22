@@ -195,11 +195,11 @@ describe('stellarium', () => {
         beforeAll(async () => {
             await mkdir(join(project(), 'nested'), { recursive: true });
             await mkdir(join(project(), 'node_modules'), { recursive: true });
-            await writeFile(join(project(), 'Outlook.req'), 'contract com.example.Outlook(city: string): string { return city }');
+            await writeFile(join(project(), 'Outlook.req'), 'contract com.example.Outlook {\n  pub fn run(city: string): string { return city }\n}');
             await writeFile(join(project(), 'Placed.req'), 'event com.example.Placed(to: com.example.Address@1)');
             await writeFile(join(project(), 'nested', 'Address.req'), 'struct com.example.Address@1(zip: int32)');
             await writeFile(join(project(), 'Today.req'), 'request Today { return 1 }');
-            await writeFile(join(project(), 'node_modules', 'Ignored.req'), 'contract ignored.Ignored: string { return "" }');
+            await writeFile(join(project(), 'node_modules', 'Ignored.req'), 'contract ignored.Ignored {\n  pub fn run(): string { return "" }\n}');
         });
 
         it('reports what would deploy without credentials or changes', async () => {
@@ -231,8 +231,8 @@ describe('stellarium', () => {
         });
 
         it('refuses a changed version with exit code 4 before deploying anything', async () => {
-            await writeFile(join(project(), 'Outlook.req'), 'contract com.example.Outlook(city: string): string { return "changed" }');
-            await writeFile(join(project(), 'New.req'), 'contract com.example.New: string { return "" }');
+            await writeFile(join(project(), 'Outlook.req'), 'contract com.example.Outlook {\n  pub fn run(city: string): string { return "changed" }\n}');
+            await writeFile(join(project(), 'New.req'), 'contract com.example.New {\n  pub fn run(): string { return "" }\n}');
             const before = deployCalls.length;
             const run = await stellarium(['deploy', project()]);
             expect(run.code).toBe(4);
@@ -241,8 +241,8 @@ describe('stellarium', () => {
         });
 
         it('names the file the node rejected and what already deployed', async () => {
-            await writeFile(join(project(), 'Outlook.req'), 'contract com.example.Outlook@2(city: string): string { return city }');
-            await writeFile(join(project(), 'New.req'), 'contract com.example.New: string { badtoken }');
+            await writeFile(join(project(), 'Outlook.req'), 'contract com.example.Outlook@2 {\n  pub fn run(city: string): string { return city }\n}');
+            await writeFile(join(project(), 'New.req'), 'contract com.example.New {\n  pub fn run(): string { badtoken }\n}');
             const run = await stellarium(['deploy', project()]);
             expect(run.code).toBe(4);
             expect(json(run).error).toMatchObject({

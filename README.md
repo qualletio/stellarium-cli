@@ -116,8 +116,10 @@ event com.example.OrderPlaced@1(orderId: string, shipTo: com.example.Address@1)
 
 ```kotlin
 // stellarium/ShippingLabel.req
-contract com.example.ShippingLabel@1(to: com.example.Address@1): string {
-    return "Ship to ${to.street}"
+contract com.example.ShippingLabel@1 {
+    pub fn label(to: com.example.Address@1): string {
+        return "Ship to ${to.street}"
+    }
 }
 ```
 
@@ -183,7 +185,7 @@ jobs:
 
 The `check` job needs no secrets, so it also works on pull requests from forks. It fails if a pull request changes a declaration without giving it a new version. `concurrency` runs one deploy at a time, and `--output agent` prints plain text to the job log instead of the JSON used when output is piped.
 
-**5. Ship a change.** Edit a declaration, give it a new version such as `contract com.example.ShippingLabel@2(...)`, and merge. The job deploys the new version and reports the others as `unchanged`.
+**5. Ship a change.** Edit a declaration, give it a new version such as `contract com.example.ShippingLabel@2 { ... }`, and merge. The job deploys the new version and reports the others as `unchanged`.
 
 ## Discover resources
 

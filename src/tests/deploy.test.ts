@@ -10,7 +10,7 @@ describe('parseDeclaration', () => {
     });
 
     it('reads an event contract and a dotted version', () => {
-        expect(parseDeclaration('contract shop.OnOrder@1.2.3 consumes shop.Order@1 { }')).toMatchObject({ kind: 'contract', version: '1.2.3' });
+        expect(parseDeclaration('contract shop.OnOrder@1.2.3 consumes shop.Order@1 { fn on() { } }')).toMatchObject({ kind: 'contract', version: '1.2.3' });
     });
 
     it('reads a restricted event and normalizes its field types', () => {
@@ -36,7 +36,7 @@ describe('parseDeclaration', () => {
 
     it.each([
         ['var x = 1', "doesn't start"],
-        ['contract Outlook: string { }', 'no path'],
+        ['contract Outlook {\n  pub fn run(): string { }\n}', 'no path'],
         ['struct shop.Address(zip: int32)', 'no version'],
     ])('refuses %s', (source, message) => {
         expect(() => parseDeclaration(source)).toThrow(message);
@@ -51,7 +51,7 @@ describe('deployOrder', () => {
 
     it('puts structs before what names them, then events, then contracts', () => {
         const ordered = deployOrder([
-            script('contract a.C(x: a.Outer@1): string { return "" }'),
+            script('contract a.C {\n  pub fn run(x: a.Outer@1): string { return "" }\n}'),
             script('event a.E(x: a.Outer@1)'),
             script('struct a.Outer@1(inner: a.Inner@1)'),
             script('struct a.Inner@1(zip: int32)'),
